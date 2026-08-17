@@ -13,6 +13,7 @@ function securityHeaders(response) {
     const headers = new Headers(response.headers);
 
     headers.set("X-Content-Type-Options", "nosniff");
+
     headers.set(
         "Referrer-Policy",
         "strict-origin-when-cross-origin"
@@ -35,9 +36,28 @@ export default {
         const url = new URL(request.url);
 
         /*
+         * Health Check
+         *
+         * Does not expose the actual secret value.
+         */
+        if (
+            url.pathname === "/api/health" &&
+            request.method === "GET"
+        ) {
+            return json({
+                success: true,
+                service: "my-cloudflare-site",
+                database: !!env.DB,
+                rateLimiter: !!env.MESSAGE_RATE_LIMITER,
+                assets: !!env.ASSETS,
+                secretConfigured: !!env.APP_ENV
+            });
+        }
+
+        /*
          * GET /api/messages
          *
-         * Return all messages from D1.
+         * Retrieve messages from D1.
          */
         if (
             url.pathname === "/api/messages" &&
@@ -58,7 +78,10 @@ export default {
                 });
 
             } catch (error) {
-                console.error("Database read error:", error);
+                console.error(
+                    "Database read error:",
+                    error
+                );
 
                 return json(
                     {
@@ -73,7 +96,7 @@ export default {
         /*
          * POST /api/messages
          *
-         * Insert a new message into D1.
+         * Insert a message into D1.
          */
         if (
             url.pathname === "/api/messages" &&
@@ -83,8 +106,7 @@ export default {
                 /*
                  * Rate limiting
                  *
-                 * Maximum:
-                 * 10 requests / 60 seconds
+                 * 10 requests / 60 seconds.
                  */
                 const rateLimit =
                     await env.MESSAGE_RATE_LIMITER.limit({
@@ -103,7 +125,7 @@ export default {
                 }
 
                 /*
-                 * Require JSON
+                 * Require JSON requests.
                  */
                 const contentType =
                     request.headers.get("Content-Type") || "";
@@ -124,26 +146,23 @@ export default {
                 }
 
                 /*
-                 * Parse JSON
+                 * Parse request body.
                  */
                 const body = await request.json();
 
-                /*
-                 * Validate name
-                 */
                 const name =
                     typeof body.name === "string"
                         ? body.name.trim()
                         : "";
 
-                /*
-                 * Validate message
-                 */
                 const message =
                     typeof body.message === "string"
                         ? body.message.trim()
                         : "";
 
+                /*
+                 * Required fields.
+                 */
                 if (!name || !message) {
                     return json(
                         {
@@ -156,7 +175,7 @@ export default {
                 }
 
                 /*
-                 * Maximum lengths
+                 * Input length validation.
                  */
                 if (name.length > 100) {
                     return json(
@@ -181,7 +200,7 @@ export default {
                 }
 
                 /*
-                 * Parameterized SQL query
+                 * Parameterized SQL query.
                  *
                  * Prevents SQL injection.
                  */
@@ -200,7 +219,10 @@ export default {
                 });
 
             } catch (error) {
-                console.error("Message API error:", error);
+                console.error(
+                    "Message API error:",
+                    error
+                );
 
                 return json(
                     {
@@ -213,7 +235,7 @@ export default {
         }
 
         /*
-         * Handle unsupported API methods.
+         * Unsupported API endpoints/methods.
          */
         if (url.pathname.startsWith("/api/")) {
             return json(
@@ -226,15 +248,19 @@ export default {
         }
 
         /*
-         * Static website
+         * Static website.
          */
         try {
-            const response = await env.ASSETS.fetch(request);
+            const response =
+                await env.ASSETS.fetch(request);
 
             return securityHeaders(response);
 
         } catch (error) {
-            console.error("Static asset error:", error);
+            console.error(
+                "Static asset error:",
+                error
+            );
 
             return new Response(
                 "Internal Server Error",
@@ -242,7 +268,8 @@ export default {
                     status: 500,
                     headers: {
                         "Content-Type": "text/plain",
-                        "X-Content-Type-Options": "nosniff"
+                        "X-Content-Type-Options":
+                            "nosniff"
                     }
                 }
             );
