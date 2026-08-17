@@ -32,19 +32,35 @@ function securityHeaders(response) {
 }
 
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
+        const start = Date.now();
         const url = new URL(request.url);
 
         /*
-         * Health Check
+         * Request observability.
          *
-         * Does not expose the actual secret value.
+         * We deliberately do not log:
+         * - request body
+         * - API tokens
+         * - secrets
+         * - message contents
+         */
+        console.log("REQUEST", {
+            method: request.method,
+            path: url.pathname,
+            timestamp: new Date().toISOString()
+        });
+
+        let response;
+
+        /*
+         * GET /api/health
          */
         if (
             url.pathname === "/api/health" &&
             request.method === "GET"
         ) {
-            return json({
+            response = json({
                 success: true,
                 service: "my-cloudflare-site",
                 database: !!env.DB,
@@ -56,10 +72,8 @@ export default {
 
         /*
          * GET /api/messages
-         *
-         * Retrieve messages from D1.
          */
-        if (
+        else if (
             url.pathname === "/api/messages" &&
             request.method === "GET"
         ) {
@@ -72,7 +86,7 @@ export default {
                     )
                     .all();
 
-                return json({
+                response = json({
                     success: true,
                     messages: results
                 });
@@ -83,7 +97,7 @@ export default {
                     error
                 );
 
-                return json(
+                response = json(
                     {
                         success: false,
                         error: "Unable to retrieve messages"
@@ -95,17 +109,14 @@ export default {
 
         /*
          * POST /api/messages
-         *
-         * Insert a message into D1.
          */
-        if (
+        else if (
             url.pathname === "/api/messages" &&
             request.method === "POST"
         ) {
             try {
                 /*
-                 * Rate limiting
-                 *
+                 * Rate limit:
                  * 10 requests / 60 seconds.
                  */
                 const rateLimit =
@@ -114,7 +125,7 @@ export default {
                     });
 
                 if (!rateLimit.success) {
-                    return json(
+                    response = json(
                         {
                             success: false,
                             error:
@@ -122,101 +133,80 @@ export default {
                         },
                         429
                     );
+                } else {
+                    const contentType =
+                        request.headers.get("Content-Type") || "";
+
+                    if (
+                        !contentType
+                            .toLowerCase()
+                            .includes("application/json")
+                    ) {
+                        response = json(
+                            {
+                                success: false,
+                                error:
+                                    "Content-Type must be application/json"
+                            },
+                            415
+                        );
+                    } else {
+                        const body = await request.json();
+
+                        const name =
+                            typeof body.name === "string"
+                                ? body.name.trim()
+                                : "";
+
+                        const message =
+                            typeof body.message === "string"
+                                ? body.message.trim()
+                                : "";
+
+                        if (!name || !message) {
+                            response = json(
+                                {
+                                    success: false,
+                                    error:
+                                        "Name and message are required"
+                                },
+                                400
+                            );
+                        } else if (name.length > 100) {
+                            response = json(
+                                {
+                                    success: false,
+                                    error:
+                                        "Name must be 100 characters or fewer"
+                                },
+                                400
+                            );
+                        } else if (message.length > 2000) {
+                            response = json(
+                                {
+                                    success: false,
+                                    error:
+                                        "Message must be 2000 characters or fewer"
+                                },
+                                400
+                            );
+                        } else {
+                            const result = await env.DB
+                                .prepare(
+                                    `INSERT INTO messages
+                                     (name, message)
+                                     VALUES (?, ?)`
+                                )
+                                .bind(name, message)
+                                .run();
+
+                            response = json({
+                                success: true,
+                                id: result.meta.last_row_id
+                            });
+                        }
+                    }
                 }
-
-                /*
-                 * Require JSON requests.
-                 */
-                const contentType =
-                    request.headers.get("Content-Type") || "";
-
-                if (
-                    !contentType
-                        .toLowerCase()
-                        .includes("application/json")
-                ) {
-                    return json(
-                        {
-                            success: false,
-                            error:
-                                "Content-Type must be application/json"
-                        },
-                        415
-                    );
-                }
-
-                /*
-                 * Parse request body.
-                 */
-                const body = await request.json();
-
-                const name =
-                    typeof body.name === "string"
-                        ? body.name.trim()
-                        : "";
-
-                const message =
-                    typeof body.message === "string"
-                        ? body.message.trim()
-                        : "";
-
-                /*
-                 * Required fields.
-                 */
-                if (!name || !message) {
-                    return json(
-                        {
-                            success: false,
-                            error:
-                                "Name and message are required"
-                        },
-                        400
-                    );
-                }
-
-                /*
-                 * Input length validation.
-                 */
-                if (name.length > 100) {
-                    return json(
-                        {
-                            success: false,
-                            error:
-                                "Name must be 100 characters or fewer"
-                        },
-                        400
-                    );
-                }
-
-                if (message.length > 2000) {
-                    return json(
-                        {
-                            success: false,
-                            error:
-                                "Message must be 2000 characters or fewer"
-                        },
-                        400
-                    );
-                }
-
-                /*
-                 * Parameterized SQL query.
-                 *
-                 * Prevents SQL injection.
-                 */
-                const result = await env.DB
-                    .prepare(
-                        `INSERT INTO messages
-                         (name, message)
-                         VALUES (?, ?)`
-                    )
-                    .bind(name, message)
-                    .run();
-
-                return json({
-                    success: true,
-                    id: result.meta.last_row_id
-                });
 
             } catch (error) {
                 console.error(
@@ -224,7 +214,7 @@ export default {
                     error
                 );
 
-                return json(
+                response = json(
                     {
                         success: false,
                         error: "Invalid request"
@@ -235,10 +225,10 @@ export default {
         }
 
         /*
-         * Unsupported API endpoints/methods.
+         * Unsupported API endpoints.
          */
-        if (url.pathname.startsWith("/api/")) {
-            return json(
+        else if (url.pathname.startsWith("/api/")) {
+            response = json(
                 {
                     success: false,
                     error: "Method or endpoint not supported"
@@ -250,29 +240,44 @@ export default {
         /*
          * Static website.
          */
-        try {
-            const response =
-                await env.ASSETS.fetch(request);
+        else {
+            try {
+                response =
+                    await env.ASSETS.fetch(request);
 
-            return securityHeaders(response);
+                response = securityHeaders(response);
 
-        } catch (error) {
-            console.error(
-                "Static asset error:",
-                error
-            );
+            } catch (error) {
+                console.error(
+                    "Static asset error:",
+                    error
+                );
 
-            return new Response(
-                "Internal Server Error",
-                {
-                    status: 500,
-                    headers: {
-                        "Content-Type": "text/plain",
-                        "X-Content-Type-Options":
-                            "nosniff"
+                response = new Response(
+                    "Internal Server Error",
+                    {
+                        status: 500,
+                        headers: {
+                            "Content-Type":
+                                "text/plain",
+                            "X-Content-Type-Options":
+                                "nosniff"
+                        }
                     }
-                }
-            );
+                );
+            }
         }
+
+        /*
+         * Request completion log.
+         */
+        console.log("RESPONSE", {
+            method: request.method,
+            path: url.pathname,
+            status: response.status,
+            duration_ms: Date.now() - start
+        });
+
+        return response;
     }
 };
