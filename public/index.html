@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Cloudflare Site</title>
+    <title>Cloudflare D1 Demo</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -11,30 +11,120 @@
 
 <header>
     <div class="container">
-        <h1>My Cloudflare Site</h1>
+        <h1>Cloudflare D1 Demo</h1>
+        <p>GitHub → Cloudflare Workers → D1</p>
     </div>
 </header>
 
 <main class="container">
 
-    <section class="hero">
-        <h2>Cloudflare CI/CD</h2>
+    <section class="card">
+        <h2>Send a Message</h2>
 
-        <p>
-            This website is automatically deployed from
-            GitHub to Cloudflare.
-        </p>
+        <form id="messageForm">
+            <input
+                type="text"
+                id="name"
+                placeholder="Your name"
+                required
+            >
 
-        <span class="badge">
-            Version 3
-        </span>
+            <textarea
+                id="message"
+                placeholder="Your message"
+                required
+            ></textarea>
+
+            <button type="submit">Send Message</button>
+        </form>
+
+        <p id="status"></p>
+    </section>
+
+    <section class="card">
+        <h2>Messages</h2>
+
+        <div id="messages">
+            Loading...
+        </div>
     </section>
 
 </main>
 
-<footer>
-    <p>Deployed with GitHub + Cloudflare</p>
-</footer>
+<script>
+const form = document.getElementById("messageForm");
+const status = document.getElementById("status");
+const messagesContainer = document.getElementById("messages");
+
+async function loadMessages() {
+    try {
+        const response = await fetch("/api/messages");
+        const data = await response.json();
+
+        if (!data.success || data.messages.length === 0) {
+            messagesContainer.innerHTML = "<p>No messages yet.</p>";
+            return;
+        }
+
+        messagesContainer.innerHTML = data.messages.map(message => `
+            <div class="message">
+                <strong>${escapeHtml(message.name)}</strong>
+                <p>${escapeHtml(message.message)}</p>
+                <small>${escapeHtml(message.created_at)}</small>
+            </div>
+        `).join("");
+
+    } catch (error) {
+        messagesContainer.innerHTML =
+            "<p>Unable to load messages.</p>";
+    }
+}
+
+form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const name = document.getElementById("name").value.trim();
+    const message = document.getElementById("message").value.trim();
+
+    status.textContent = "Sending...";
+
+    try {
+        const response = await fetch("/api/messages", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                name,
+                message
+            })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            status.textContent = "Failed to send message.";
+            return;
+        }
+
+        status.textContent = "Message saved successfully!";
+        form.reset();
+
+        await loadMessages();
+
+    } catch (error) {
+        status.textContent = "Network error.";
+    }
+});
+
+function escapeHtml(value) {
+    const div = document.createElement("div");
+    div.textContent = value;
+    return div.innerHTML;
+}
+
+loadMessages();
+</script>
 
 </body>
 </html>

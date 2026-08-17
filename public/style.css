@@ -5,57 +5,83 @@
 body {
     margin: 0;
     font-family: Arial, sans-serif;
-    background: #f5f7fa;
+    background: #f3f4f6;
     color: #1f2937;
 }
 
 .container {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 20px;
+    width: min(900px, 92%);
+    margin: auto;
 }
 
 header {
+    padding: 35px 0;
     background: #111827;
     color: white;
-    padding: 20px 0;
 }
 
 header h1 {
-    margin: 0;
+    margin: 0 0 8px;
 }
 
-.hero {
-    margin-top: 40px;
-    padding: 50px 30px;
+main {
+    padding: 35px 0;
+}
+
+.card {
     background: white;
+    padding: 25px;
+    margin-bottom: 25px;
     border-radius: 12px;
-    text-align: center;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
 }
 
-.hero h2 {
-    font-size: 36px;
-    margin-bottom: 15px;
+input,
+textarea {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 16px;
 }
 
-.hero p {
-    font-size: 18px;
-    line-height: 1.6;
+textarea {
+    min-height: 120px;
+    resize: vertical;
 }
 
-.badge {
-    display: inline-block;
-    margin-top: 20px;
-    padding: 8px 14px;
-    border-radius: 20px;
-    background: #e5e7eb;
-    font-size: 14px;
+button {
+    padding: 12px 20px;
+    border: 0;
+    border-radius: 8px;
+    background: #111827;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
 }
 
-footer {
-    margin-top: 40px;
-    padding: 20px;
-    text-align: center;
+button:hover {
+    opacity: 0.9;
+}
+
+#status {
+    margin-top: 15px;
+}
+
+.message {
+    padding: 15px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.message:last-child {
+    border-bottom: 0;
+}
+
+.message p {
+    margin: 8px 0;
+}
+
+.message small {
     color: #6b7280;
 }
