@@ -3,8 +3,8 @@ function json(data, status = 200) {
         status,
         headers: {
             "Content-Type": "application/json",
-            "X-Content-Type-Options": "nosniff",
-            "Cache-Control": "no-store"
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff"
         }
     });
 }
@@ -13,7 +13,11 @@ function securityHeaders(response) {
     const headers = new Headers(response.headers);
 
     headers.set("X-Content-Type-Options", "nosniff");
-    headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    headers.set(
+        "Referrer-Policy",
+        "strict-origin-when-cross-origin"
+    );
+
     headers.set(
         "Content-Security-Policy",
         "default-src 'self'; style-src 'self'; script-src 'self' 'unsafe-inline'"
@@ -30,42 +34,111 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
 
-        // API: GET messages
-        if (url.pathname === "/api/messages" && request.method === "GET") {
-            const { results } = await env.DB
-                .prepare(
-                    "SELECT id, name, message, created_at FROM messages ORDER BY id DESC"
-                )
-                .all();
+        /*
+         * GET /api/messages
+         *
+         * Return all messages from D1.
+         */
+        if (
+            url.pathname === "/api/messages" &&
+            request.method === "GET"
+        ) {
+            try {
+                const { results } = await env.DB
+                    .prepare(
+                        `SELECT id, name, message, created_at
+                         FROM messages
+                         ORDER BY id DESC`
+                    )
+                    .all();
 
-            return json({
-                success: true,
-                messages: results
-            });
+                return json({
+                    success: true,
+                    messages: results
+                });
+
+            } catch (error) {
+                console.error("Database read error:", error);
+
+                return json(
+                    {
+                        success: false,
+                        error: "Unable to retrieve messages"
+                    },
+                    500
+                );
+            }
         }
 
-        // API: POST message
-        if (url.pathname === "/api/messages" && request.method === "POST") {
+        /*
+         * POST /api/messages
+         *
+         * Insert a new message into D1.
+         */
+        if (
+            url.pathname === "/api/messages" &&
+            request.method === "POST"
+        ) {
             try {
-                const contentType = request.headers.get("Content-Type") || "";
+                /*
+                 * Rate limiting
+                 *
+                 * Maximum:
+                 * 10 requests / 60 seconds
+                 */
+                const rateLimit =
+                    await env.MESSAGE_RATE_LIMITER.limit({
+                        key: "message-api"
+                    });
 
-                if (!contentType.includes("application/json")) {
+                if (!rateLimit.success) {
                     return json(
                         {
                             success: false,
-                            error: "Content-Type must be application/json"
+                            error:
+                                "Rate limit exceeded. Try again later."
+                        },
+                        429
+                    );
+                }
+
+                /*
+                 * Require JSON
+                 */
+                const contentType =
+                    request.headers.get("Content-Type") || "";
+
+                if (
+                    !contentType
+                        .toLowerCase()
+                        .includes("application/json")
+                ) {
+                    return json(
+                        {
+                            success: false,
+                            error:
+                                "Content-Type must be application/json"
                         },
                         415
                     );
                 }
 
+                /*
+                 * Parse JSON
+                 */
                 const body = await request.json();
 
+                /*
+                 * Validate name
+                 */
                 const name =
                     typeof body.name === "string"
                         ? body.name.trim()
                         : "";
 
+                /*
+                 * Validate message
+                 */
                 const message =
                     typeof body.message === "string"
                         ? body.message.trim()
@@ -75,17 +148,22 @@ export default {
                     return json(
                         {
                             success: false,
-                            error: "Name and message are required"
+                            error:
+                                "Name and message are required"
                         },
                         400
                     );
                 }
 
+                /*
+                 * Maximum lengths
+                 */
                 if (name.length > 100) {
                     return json(
                         {
                             success: false,
-                            error: "Name must be 100 characters or fewer"
+                            error:
+                                "Name must be 100 characters or fewer"
                         },
                         400
                     );
@@ -95,15 +173,23 @@ export default {
                     return json(
                         {
                             success: false,
-                            error: "Message must be 2000 characters or fewer"
+                            error:
+                                "Message must be 2000 characters or fewer"
                         },
                         400
                     );
                 }
 
+                /*
+                 * Parameterized SQL query
+                 *
+                 * Prevents SQL injection.
+                 */
                 const result = await env.DB
                     .prepare(
-                        "INSERT INTO messages (name, message) VALUES (?, ?)"
+                        `INSERT INTO messages
+                         (name, message)
+                         VALUES (?, ?)`
                     )
                     .bind(name, message)
                     .run();
@@ -114,6 +200,8 @@ export default {
                 });
 
             } catch (error) {
+                console.error("Message API error:", error);
+
                 return json(
                     {
                         success: false,
@@ -124,9 +212,40 @@ export default {
             }
         }
 
-        // Static website
-        const response = await env.ASSETS.fetch(request);
+        /*
+         * Handle unsupported API methods.
+         */
+        if (url.pathname.startsWith("/api/")) {
+            return json(
+                {
+                    success: false,
+                    error: "Method or endpoint not supported"
+                },
+                405
+            );
+        }
 
-        return securityHeaders(response);
+        /*
+         * Static website
+         */
+        try {
+            const response = await env.ASSETS.fetch(request);
+
+            return securityHeaders(response);
+
+        } catch (error) {
+            console.error("Static asset error:", error);
+
+            return new Response(
+                "Internal Server Error",
+                {
+                    status: 500,
+                    headers: {
+                        "Content-Type": "text/plain",
+                        "X-Content-Type-Options": "nosniff"
+                    }
+                }
+            );
+        }
     }
 };
