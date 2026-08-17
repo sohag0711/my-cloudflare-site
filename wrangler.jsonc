@@ -9,5 +9,12 @@
     "run_worker_first": [
       "/api/*"
     ]
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "my-cloudflare-db",
+      "database_id": "004d5272-2570-4fa6-9b59-8df31e34fb9b"
+    }
+  ]
 }
