@@ -1,0 +1,16 @@
+{
+  "name": "my-cloudflare-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker with D1 database and static assets",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dry": "wrangler deploy --dry-run",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4",
+    "wrangler": "^4.123.0"
+  }
+}
